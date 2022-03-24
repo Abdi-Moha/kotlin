@@ -102,6 +102,7 @@ open class CompilerConfigurationProviderImpl(
         ).also { registerCompilerExtensions(projectEnv.project, module) }
     }
 
+
     @OptIn(TestInfrastructureInternals::class)
     fun createCompilerConfiguration(module: TestModule): CompilerConfiguration {
         return createCompilerConfiguration(module, configurators)
