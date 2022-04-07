@@ -42,6 +42,7 @@ import org.jetbrains.kotlin.fir.extensions.FirRegisteredPluginAnnotations
 import org.jetbrains.kotlin.fir.extensions.FirSwitchableExtensionDeclarationsSymbolProvider
 import org.jetbrains.kotlin.fir.extensions.predicate.DeclarationPredicate
 import org.jetbrains.kotlin.fir.java.FirJavaFacade
+import org.jetbrains.kotlin.fir.java.FirJavaFacadeForSource
 import org.jetbrains.kotlin.fir.java.JavaSymbolProvider
 import org.jetbrains.kotlin.fir.java.deserialization.JvmClassFileBasedSymbolProvider
 import org.jetbrains.kotlin.fir.resolve.providers.FirDependenciesSymbolProvider
@@ -188,7 +189,7 @@ internal object LLFirSessionFactory {
                         switchableExtensionDeclarationsSymbolProvider,
                         JavaSymbolProvider(
                             this,
-                            FirJavaFacade(
+                            FirJavaFacadeForSource(
                                 this, moduleData, project.createJavaClassFinder(contentScope)
                             )
                         ),
@@ -226,8 +227,6 @@ internal object LLFirSessionFactory {
             val kotlinScopeProvider = FirKotlinScopeProvider(::wrapScopeWithJvmMapped)
             register(FirKotlinScopeProvider::class, kotlinScopeProvider)
 
-            val mainModuleData = KtModuleBasedModuleData(sourceModule).apply { bindSession(this@session) }
-
             val moduleDataProvider = createModuleDataProviderWithLibraryDependencies(sourceModule, this)
             val classFileBasedSymbolProvider = JvmClassFileBasedSymbolProvider(
                 this@session,
@@ -235,8 +234,11 @@ internal object LLFirSessionFactory {
                 kotlinScopeProvider = kotlinScopeProvider,
                 packagePartProvider = project.createPackagePartProviderForLibrary(searchScope),
                 kotlinClassFinder = VirtualFileFinderFactory.getInstance(project).create(searchScope),
-                javaFacade = FirJavaFacade(
-                    this@session, mainModuleData, project.createJavaClassFinder(searchScope)
+                javaFacade = LLFirJavaFacadeForSourceBinaries(
+                    this@session,
+                    builtinTypes,
+                    project.createJavaClassFinder(searchScope),
+                    moduleDataProvider
                 )
             )
             val symbolProvider =
@@ -281,18 +283,12 @@ internal object LLFirSessionFactory {
     fun createBuiltinsAndCloneableSession(
         project: Project,
         builtinTypes: BuiltinTypes,
+        stdlibModule: KtModule,
         languageVersionSettings: LanguageVersionSettings = LanguageVersionSettingsImpl.DEFAULT,
         configureSession: (LLFirSession.() -> Unit)? = null,
     ): LLFirBuiltinsAndCloneableSession {
         return LLFirBuiltinsAndCloneableSession(project, builtinTypes).apply session@{
-            val moduleData = FirModuleDataImpl(
-                Name.special("<builtins module>"),
-                emptyList(),
-                emptyList(),
-                emptyList(),
-                JvmPlatforms.unspecifiedJvmPlatform,
-                JvmPlatformAnalyzerServices
-            ).apply {
+            val moduleData = KtModuleBasedModuleData(stdlibModule).apply {
                 bindSession(this@session)
             }
             registerIdeComponents(project)
@@ -376,15 +372,19 @@ internal object LLFirSessionFactory {
                 val librariesSearchScope = ProjectScope.getLibrariesScope(project)
                     .intersectWith(GlobalSearchScope.notScope(libraryModule.contentScope)) // <all libraries scope> - <current library scope>
                 add(builtinsAndCloneableSession.symbolProvider)
+                val libraryDependenciesModuleDataProvider = createModuleDataProviderWithLibraryDependencies(module, this@session)
                 add(
                     JvmClassFileBasedSymbolProvider(
                         this@session,
-                        moduleDataProvider = createModuleDataProviderWithLibraryDependencies(module, this@session),
+                        moduleDataProvider = libraryDependenciesModuleDataProvider,
                         kotlinScopeProvider = scopeProvider,
                         packagePartProvider = project.createPackagePartProviderForLibrary(librariesSearchScope),
                         kotlinClassFinder = VirtualFileFinderFactory.getInstance(project).create(librariesSearchScope),
-                        javaFacade = FirJavaFacade(
-                            this@session, moduleData, project.createJavaClassFinder(librariesSearchScope)
+                        javaFacade = LLFirJavaFacadeForSourceBinaries(
+                            this@session,
+                            builtinTypes,
+                            project.createJavaClassFinder(librariesSearchScope),
+                            libraryDependenciesModuleDataProvider
                         )
                     )
                 )
@@ -422,7 +422,7 @@ internal object LLFirSessionFactory {
                         provider.symbolProvider,
                         JavaSymbolProvider(
                             this,
-                            FirJavaFacade(
+                            FirJavaFacadeForSource(
                                 this, moduleData, project.createJavaClassFinder(contentScope)
                             )
                         ),
