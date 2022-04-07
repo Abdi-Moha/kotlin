@@ -124,6 +124,26 @@ class JvmEnvironmentConfigurator(testServices: TestServices) : EnvironmentConfig
             files.add(KtTestUtil.getAnnotationsJar())
             return files
         }
+
+        fun getJdkHome(jdkKindTestJdkKind: TestJdkKind): File? = when (jdkKindTestJdkKind) {
+            TestJdkKind.MOCK_JDK -> null
+            TestJdkKind.MODIFIED_MOCK_JDK -> null
+            TestJdkKind.FULL_JDK_6 -> File(System.getenv("JDK_16") ?: error("Environment variable JDK_16 is not set"))
+            TestJdkKind.FULL_JDK_11 -> KtTestUtil.getJdk11Home()
+            TestJdkKind.FULL_JDK_17 -> KtTestUtil.getJdk17Home()
+            TestJdkKind.FULL_JDK -> if (SystemInfo.IS_AT_LEAST_JAVA9) File(System.getProperty("java.home")) else null
+            TestJdkKind.ANDROID_API -> null
+        }
+
+        fun getJdkClasspathRoot(jdkKind: TestJdkKind): File? = when (jdkKind) {
+            TestJdkKind.MOCK_JDK -> KtTestUtil.findMockJdkRtJar()
+            TestJdkKind.MODIFIED_MOCK_JDK -> KtTestUtil.findMockJdkRtModified()
+            TestJdkKind.ANDROID_API -> KtTestUtil.findAndroidApiJar()
+            TestJdkKind.FULL_JDK_6 -> null
+            TestJdkKind.FULL_JDK_11 -> null
+            TestJdkKind.FULL_JDK_17 -> null
+            TestJdkKind.FULL_JDK -> null
+        }
     }
 
     override val directiveContainers: List<DirectivesContainer>
@@ -157,34 +177,19 @@ class JvmEnvironmentConfigurator(testServices: TestServices) : EnvironmentConfig
         configureDefaultJvmTarget(configuration)
         val registeredDirectives = module.directives
 
-        when (extractJdkKind(registeredDirectives)) {
-            TestJdkKind.MOCK_JDK -> {
-                configuration.addJvmClasspathRoot(KtTestUtil.findMockJdkRtJar())
+        val jdkKind = extractJdkKind(registeredDirectives)
+        getJdkHome(jdkKind)?.let { configuration.put(JVMConfigurationKeys.JDK_HOME, it) }
+        getJdkClasspathRoot(jdkKind)?.let { configuration.addJvmClasspathRoot(it) }
+
+        when (jdkKind) {
+            TestJdkKind.MOCK_JDK, TestJdkKind.MODIFIED_MOCK_JDK, TestJdkKind.ANDROID_API -> {
                 configuration.put(JVMConfigurationKeys.NO_JDK, true)
             }
-            TestJdkKind.MODIFIED_MOCK_JDK -> {
-                configuration.addJvmClasspathRoot(KtTestUtil.findMockJdkRtModified())
-                configuration.put(JVMConfigurationKeys.NO_JDK, true)
-            }
-            TestJdkKind.FULL_JDK_6 -> {
-                val jdk6 = System.getenv("JDK_16") ?: error("Environment variable JDK_16 is not set")
-                configuration.put(JVMConfigurationKeys.JDK_HOME, File(jdk6))
-            }
-            TestJdkKind.FULL_JDK_11 -> {
-                configuration.put(JVMConfigurationKeys.JDK_HOME, KtTestUtil.getJdk11Home())
-            }
-            TestJdkKind.FULL_JDK_17 -> {
-                configuration.put(JVMConfigurationKeys.JDK_HOME, KtTestUtil.getJdk17Home())
-            }
-            TestJdkKind.FULL_JDK -> {
-                if (SystemInfo.IS_AT_LEAST_JAVA9) {
-                    configuration.put(JVMConfigurationKeys.JDK_HOME, File(System.getProperty("java.home")))
-                }
-            }
-            TestJdkKind.ANDROID_API -> {
-                configuration.addJvmClasspathRoot(KtTestUtil.findAndroidApiJar())
-                configuration.put(JVMConfigurationKeys.NO_JDK, true)
-            }
+
+            TestJdkKind.FULL_JDK_6 -> {}
+            TestJdkKind.FULL_JDK_11 -> {}
+            TestJdkKind.FULL_JDK_17 -> {}
+            TestJdkKind.FULL_JDK -> {}
         }
 
         val configurationKind = extractConfigurationKind(registeredDirectives).also {
