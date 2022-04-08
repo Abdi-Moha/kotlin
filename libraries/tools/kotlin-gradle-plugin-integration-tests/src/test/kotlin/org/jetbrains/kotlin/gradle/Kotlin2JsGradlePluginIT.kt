@@ -22,7 +22,6 @@ import org.jetbrains.kotlin.gradle.tasks.USING_JS_IR_BACKEND_MESSAGE
 import org.jetbrains.kotlin.gradle.testbase.*
 import org.jetbrains.kotlin.gradle.util.jsCompilerType
 import org.jetbrains.kotlin.gradle.util.normalizePath
-import org.jetbrains.kotlin.test.testFramework.KtUsefulTestCase
 import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.condition.DisabledIf
@@ -1116,8 +1115,7 @@ abstract class AbstractKotlin2JsGradlePluginIT(protected val irBackend: Boolean)
     fun testMochaFailedModuleNotFound(gradleVersion: GradleVersion) {
         project("kotlin-js-nodejs-project", gradleVersion) {
             build("nodeTest") {
-                val tcLines = output.lines().filter { it.contains("##teamcity[") }
-                assertTrue { tcLines.isEmpty() }
+                assertOutputDoesNotContain("##teamcity[")
             }
 
             projectPath.resolve("src/test/kotlin/Tests.kt").appendText(
